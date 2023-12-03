@@ -1,11 +1,12 @@
-use std::{
-    ffi::{c_char, c_ulong},
-    mem::MaybeUninit,
-    ptr::NonNull
-};
+use std::{ffi::{c_char, c_ulong}, mem::MaybeUninit, ptr, ptr::NonNull};
 use std::convert::Into;
+use std::ffi::c_void;
 use nexus_rs::raw_structs::{
     AddonAPI, AddonDefinition, AddonVersion, EAddonFlags, ELogLevel, LPVOID,
+};
+use arcdps_imgui::{
+    self,
+    sys::{igSetAllocatorFunctions, igSetCurrentContext},
 };
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use windows::{
@@ -42,6 +43,13 @@ static mut DISCORD_CLIENT: Lazy<DiscordIpcClient> = Lazy::new(|| DiscordIpcClien
 unsafe extern "C" fn load(a_api: *mut AddonAPI) {
     let api = &*a_api;
     API.write(&api);
+
+    igSetCurrentContext(api.imgui_context);
+    igSetAllocatorFunctions(
+        Some(api.imgui_malloc),
+        Some(api.imgui_free),
+        ptr::null::<c_void>() as *mut _,
+    );
 
     (api.log)(ELogLevel::INFO, s!("Loaded Discord Rich Presence").0 as _);
     DISCORD_CLIENT.connect().unwrap();
