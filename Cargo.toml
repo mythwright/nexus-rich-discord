@@ -12,8 +12,10 @@ name = "nexus_rich_discord_lib"
 
 [dependencies]
 arcdps-imgui = "0.8.0"
+bitmask-enum = "2.2.3"
 discord-rich-presence = "0.2.3"
 once_cell = { version = "1.18.0", features = [] }
+serde = { version = "1.0.193", features = ["derive"] }
 
 [dependencies.nexus-rs]
 git = "https://github.com/belst/raidcore_bindings-rs"
