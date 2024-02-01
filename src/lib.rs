@@ -1,11 +1,11 @@
 use std::{ffi::{c_char, c_ulong}, ptr::NonNull};
 use std::convert::Into;
-use std::sync::{Arc, Mutex};
-use lazy_static::lazy_static;
+use std::mem::MaybeUninit;
 use tokio;
 
-use nexus_rs::raw_structs::{AddonAPI, AddonDefinition, AddonVersion, EAddonFlags, ELogLevel, LPVOID};
+use nexus_rs::raw_structs::{AddonAPI, AddonDefinition, AddonVersion, EAddonFlags, LPVOID};
 use once_cell::sync::OnceCell;
+use tokio::task::JoinHandle;
 use windows::{
     core::s,
     Win32::{
@@ -21,6 +21,8 @@ use crate::rich_presence_core::NexusRichPresence;
 pub mod rich_presence_core;
 
 static mut HANDLE: Option<HMODULE> = None;
+static mut THREADS: OnceCell<Vec<JoinHandle<()>>> = OnceCell::new();
+static mut API: MaybeUninit<&'static AddonAPI> = MaybeUninit::uninit();
 static DISCORD_APP_ID_I64: i64 = 1180951923722039316;
 
 #[no_mangle]
@@ -38,38 +40,17 @@ unsafe extern "C" fn DllMain(
     true
 }
 
-// lazy_static!{
-//     static ref NRP: Arc<Mutex<NexusRichPresence>> = Arc::new(Mutex::new(unsafe {NexusRichPresence::new_blank()}));
-// }
-// static mut NRP: MaybeUninit<NexusRichPresence> = MaybeUninit::uninit();
-static mut NRP: OnceCell<Arc<Mutex<NexusRichPresence>>> = OnceCell::new();
+unsafe extern "C" fn load(a_api: *mut AddonAPI) {
+    API.write(&*a_api);
+    THREADS.set(Vec::new()).expect("TODO: panic message");
 
-
-#[tokio::main]
-async unsafe extern "C" fn load(a_api: *mut AddonAPI) {
-    let n = NRP.get_or_init(|| Arc::new(Mutex::new(unsafe {NexusRichPresence::new_blank()})));
-    n.lock().unwrap().set_api(*a_api).await;
-    n.lock().unwrap().set_discord(DISCORD_APP_ID_I64).await;
-    n.lock().unwrap().start().await;
-
-    n.lock().unwrap().log(ELogLevel::INFO, "Nexus Rich Presence has been loaded.\0".to_string());
+    let n = NexusRichPresence::new(DISCORD_APP_ID_I64);
+    let q= n.start();
+    THREADS.get_mut().unwrap().push(q);
 }
 
 #[tokio::main]
 async unsafe extern "C" fn unload() {
-    match Arc::into_inner(NRP.take().unwrap()) {
-        None => {
-            MessageBoxA(HWND(0),
-                        s!("Cannot into_inner of Mutex"),
-                        s!("Nexus Rich Presence"),
-                        Default::default()
-            );
-
-        }
-        Some(n) => {
-            n.into_inner().unwrap().unload().await;
-        }
-    }
 }
 
 #[no_mangle]
