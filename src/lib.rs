@@ -2,7 +2,6 @@ use std::{ffi::{c_char, c_ulong}, ptr::NonNull};
 use std::convert::Into;
 use std::mem::MaybeUninit;
 use tokio;
-
 use nexus_rs::raw_structs::{AddonAPI, AddonDefinition, AddonVersion, EAddonFlags, LPVOID};
 use once_cell::sync::OnceCell;
 use tokio::task::JoinHandle;
@@ -11,14 +10,11 @@ use windows::{
     Win32::{
         Foundation::{HINSTANCE, HMODULE},
         System::SystemServices,
-        UI::WindowsAndMessaging::MessageBoxA
     },
 };
-use windows::Win32::Foundation::HWND;
-
 use crate::rich_presence_core::NexusRichPresence;
 
-pub mod rich_presence_core;
+mod rich_presence_core;
 
 static mut HANDLE: Option<HMODULE> = None;
 static mut THREADS: OnceCell<Vec<JoinHandle<()>>> = OnceCell::new();
@@ -45,13 +41,11 @@ unsafe extern "C" fn load(a_api: *mut AddonAPI) {
     THREADS.set(Vec::new()).expect("TODO: panic message");
 
     let n = NexusRichPresence::new(DISCORD_APP_ID_I64);
-    let q= n.start();
-    THREADS.get_mut().unwrap().push(q);
+    let handle = n.start();
+    THREADS.get_mut().unwrap().push(handle);
 }
 
-#[tokio::main]
-async unsafe extern "C" fn unload() {
-}
+unsafe extern "C" fn unload() {}
 
 #[no_mangle]
 pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {

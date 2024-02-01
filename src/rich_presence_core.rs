@@ -15,19 +15,17 @@ pub struct NexusRichPresence {
     discord_id: i64,
 }
 
-unsafe impl Send for NexusRichPresence {}
-
 impl NexusRichPresence {
     pub unsafe fn start(self: Arc<Self>) -> JoinHandle<()> {
-        RUNTIME.set(runtime::Runtime::new().unwrap()).expect("TODO: panic message");
-        RUNTIME.get().unwrap().spawn(async move {
-            let s = self.shutdown.get_or_init(|| async {false}).await;
-            while !s {
+        let _ = RUNTIME.set(runtime::Runtime::new().unwrap());
+        let h = RUNTIME.get().unwrap().spawn(async move {
+            while !*self.shutdown.get_or_init(|| async {false}).await {
                 self.start_discord().await;
                 self.update_act("Sitting at Character Select".to_string(), "AFK".to_string()).await;
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
-        })
+        });
+        h
     }
 
     pub async fn start_discord(&self) {
@@ -67,17 +65,17 @@ impl NexusRichPresence {
         }
     }
 
-    pub async unsafe fn unload(self) {
-        // if self.discord.is_none() {
-        //     if self.api.is_some() {
-        //         self.log(ELogLevel::CRITICAL, "No Discord Client has been loaded to disconnect\0".to_string())
-        //     }
-        //     return
-        // }
-        // if self.api.is_some() {
-        //     self.log(ELogLevel::INFO, "Disconnected Discord Client\0".to_string())
-        // }
-        // self.discord.unwrap().disconnect().await;
+    pub fn unload(mut self) {
+        let _ = self.shutdown.set(true);
+
+        unsafe {
+            RUNTIME.take().unwrap().shutdown_background();
+        }
+
+        let d = self.discord.take().unwrap();
+        let _ = d.disconnect();
+        self.log(ELogLevel::INFO, "Discord disconnected".to_string())
+
     }
     pub fn log(&self,level: ELogLevel, s: String) {
         unsafe {
