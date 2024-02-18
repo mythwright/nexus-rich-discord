@@ -19,6 +19,8 @@ serde = { version = "1.0.193", features = ["derive"] }
 tokio = { version = "1.35.0", features = ["full"] }
 lazy_static = { version = "1.4.0", features = [] }
 log = "0.4.20"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 [dependencies.nexus-rs]
 git = "https://github.com/belst/raidcore_bindings-rs"

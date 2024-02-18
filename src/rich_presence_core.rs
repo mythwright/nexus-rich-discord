@@ -1,51 +1,59 @@
-use std::sync::Arc;
+use std::sync::{Arc};
 use std::time::Duration;
 use nexus_rs::raw_structs::ELogLevel;
-use tokio::runtime;
 use tokio::sync::OnceCell;
-use tokio::task::JoinHandle;
+use tokio::sync::RwLock;
 use crate::API;
-
-static mut RUNTIME: OnceCell<runtime::Runtime> = OnceCell::const_new();
 
 
 pub struct NexusRichPresence {
     pub discord: OnceCell<discord_sdk::Discord>,
-    pub shutdown: OnceCell<bool>,
+    pub shutdown: RwLock<bool>,
     discord_id: i64,
 }
 
 impl NexusRichPresence {
-    pub unsafe fn start(self: Arc<Self>) -> JoinHandle<()> {
-        let _ = RUNTIME.set(runtime::Runtime::new().unwrap());
-        let h = RUNTIME.get().unwrap().spawn(async move {
-            while !*self.shutdown.get_or_init(|| async {false}).await {
-                self.start_discord().await;
-                self.update_act("Sitting at Character Select".to_string(), "AFK".to_string()).await;
-                tokio::time::sleep(Duration::from_secs(1)).await;
+    pub async unsafe fn start(self: &mut Arc<Self>) {
+        self.log(ELogLevel::DEBUG, "Starting Discord...".to_string());
+        self.start_discord().await;
+        if !self.discord.initialized() {
+            self.log(ELogLevel::CRITICAL, "Discord not initialized".to_string());
+        }
+        self.log(ELogLevel::DEBUG, "Done Waiting for Discord...".to_string());
+        loop {
+            {
+                let shut = self.shutdown.read().await;
+                if !*shut {
+                    self.log(ELogLevel::DEBUG, "Updating Discord...".to_string());
+                    self.update_act("Sitting at Character Select".to_string(), "AFK".to_string()).await;
+                }
             }
-        });
-        h
+
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
     }
 
     pub async fn start_discord(&self) {
+        let (wheel, handler) = discord_sdk::wheel::Wheel::new(Box::new(|err| {
+            tracing::error!(error = ?err, "encountered an error");
+        }));
+        let mut user = wheel.user();
+
+        self.log(ELogLevel::DEBUG, "Creating Discord SDK...".to_string());
+        let disc = discord_sdk::Discord::new(
+            discord_sdk::DiscordApp::PlainId(self.discord_id),
+            discord_sdk::Subscriptions::ACTIVITY,
+            Box::new(handler)).expect("unable to create discord client");
+
+        self.log(ELogLevel::DEBUG, "Waiting for Discord handshake".to_string());
+        user.0.changed().await.unwrap();
+
+        self.log(ELogLevel::DEBUG, "Got Discord Connection".to_string());
+        match &*user.0.borrow() {
+            discord_sdk::wheel::UserState::Connected(user) => user.clone(),
+            discord_sdk::wheel::UserState::Disconnected(err) => panic!("failed to connect to Discord: {}", err),
+        };
         self.discord.get_or_init(|| async {
-            let (wheel, handler) = discord_sdk::wheel::Wheel::new(Box::new(|_err| {}));
-            let mut user = wheel.user();
-
-            let disc = discord_sdk::Discord::new(
-                discord_sdk::DiscordApp::PlainId(self.discord_id),
-                discord_sdk::Subscriptions::ACTIVITY,
-                Box::new(handler)).unwrap();
-
-            self.log(ELogLevel::INFO, "waiting for Discord handshake".to_string());
-            user.0.changed().await.unwrap();
-
-            match &*user.0.borrow() {
-                discord_sdk::wheel::UserState::Connected(user) => user.clone(),
-                discord_sdk::wheel::UserState::Disconnected(err) => panic!("failed to connect to Discord: {}", err),
-            };
-
             disc
         }).await;
     }
@@ -65,28 +73,26 @@ impl NexusRichPresence {
         }
     }
 
-    pub fn unload(mut self) {
-        let _ = self.shutdown.set(true);
-
-        unsafe {
-            RUNTIME.take().unwrap().shutdown_background();
+    pub async fn unload(mut self) {
+        {
+            let mut shut = self.shutdown.write().await;
+            *shut = true;
         }
+
 
         let d = self.discord.take().unwrap();
         let _ = d.disconnect();
         self.log(ELogLevel::INFO, "Discord disconnected".to_string())
-
     }
-    pub fn log(&self,level: ELogLevel, s: String) {
+    pub fn log(&self, level: ELogLevel, s: String) {
         unsafe {
             let api = API.assume_init();
             (api.log)(
                 level,
-                (s+"\0").as_ptr() as _,
+                (s + "\0").as_ptr() as _,
             );
         }
     }
-
 
     pub fn new(discord_app_id: i64) -> Arc<Self> {
         Arc::new(Self {

@@ -2,7 +2,7 @@ use bitmask_enum::bitmask;
 use serde::Deserialize;
 
 #[bitmask(u32)]
-enum UiState {
+pub enum UiState {
     IsMapOpen = 1 << 0,
     IsCompassTopRight = 1 << 1,
     DoesCompassHaveRotationEnabled = 1 << 2,
@@ -13,7 +13,7 @@ enum UiState {
 }
 
 #[derive(Deserialize, Debug)]
-struct Identity {
+pub struct Identity {
     pub name: String,
     pub profession: u8,
     pub spec: u16,
@@ -28,7 +28,7 @@ struct Identity {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-struct MumbleContext {
+pub struct MumbleContext {
     pub server_address: [u8; 28],
     pub map_id: u32,
     pub map_type: u32,
@@ -48,11 +48,91 @@ struct MumbleContext {
     pub mount_index: u8,
 }
 
+/// Three-dimensional Vector
+pub type Vector3D = [f32; 3];
+
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+/// Character position in Left hand coordinate system (in SI base units: meters)
+pub struct Position {
+    /// The character's position in space (in meters).
+    pub position: Vector3D,
+    /// A unit vector pointing out of the character's eyes (in meters).
+    pub front: Vector3D,
+    /// A unit vector pointing out of the top of the character's head (in meters).
+    pub top: Vector3D,
+}
+
+#[derive(Copy, Debug)]
+#[repr(C)]
+/// MumbleLink data in repr(C) format
+pub struct CMumbleLinkData {
+    pub ui_version: u32,
+    pub ui_tick: u32,
+    pub avatar: Position,
+    pub name: [i32; 256],
+    pub camera: Position,
+    pub identity: [i32; 256],
+    pub context_len: u32,
+    pub context: [u8; 256],
+    pub description: [i32; 2048],
+}
+
+impl Clone for CMumbleLinkData {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 #[derive(Debug)]
 #[repr(C)]
-struct MumbleLinkData {
+pub struct MumbleLinkData {
     pub ui_version: u32,
     pub ui_tick: u32,
     pub identity: Identity,
     pub context: MumbleContext,
+}
+
+#[repr(u8)]
+enum EProfession {
+    Guardian = 1,
+    Warrior = 2,
+    Engineer = 3,
+    Ranger = 4,
+    Thief = 5,
+    Elementalist = 6,
+    Mesmer = 7,
+    Necromancer = 8,
+    Revenant = 9,
+}
+
+#[repr(u8)]
+enum ERace {
+    Asura = 0,
+    Charr,
+    Human,
+    Norn,
+    Sylvari,
+}
+
+#[repr(u8)]
+enum EUIScale {
+    Small = 0,
+    Normal,
+    Large,
+    Larger,
+}
+
+/* structs */
+struct CIdentity {
+    name: [u8; 20],
+    profession: EProfession,
+    specialization: u32,
+    race: ERace,
+    map_id: u32,
+    world_id: u32,
+    team_color_id: u32,
+    is_commander: bool, // is the player currently tagged up
+    fov: f32,
+    uisize: EUIScale,
 }
