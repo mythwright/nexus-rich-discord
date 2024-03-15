@@ -12,9 +12,10 @@ pub enum UiState {
     IsInCombat = 1 << 6,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, Copy)]
+#[repr(C)]
 pub struct Identity {
-    pub name: String,
+    pub name: [u8; 20],
     pub profession: u8,
     pub spec: u16,
     pub race: u16,
@@ -72,9 +73,9 @@ pub struct CMumbleLinkData {
     pub avatar: Position,
     pub name: [i32; 256],
     pub camera: Position,
-    pub identity: [i32; 256],
+    pub identity: [u16; 256],
     pub context_len: u32,
-    pub context: [u8; 256],
+    pub context: MumbleContext,
     pub description: [i32; 2048],
 }
 
@@ -132,7 +133,8 @@ struct CIdentity {
     map_id: u32,
     world_id: u32,
     team_color_id: u32,
-    is_commander: bool, // is the player currently tagged up
+    is_commander: bool,
+    // is the player currently tagged up
     fov: f32,
     uisize: EUIScale,
 }

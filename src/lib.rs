@@ -1,5 +1,8 @@
+use crate::mumble_data::CMumbleLinkData;
 use crate::rich_presence_core::NexusRichPresence;
-use nexus_rs::raw_structs::{AddonAPI, AddonDefinition, AddonVersion, EAddonFlags, LPVOID};
+use nexus_rs::raw_structs::{
+    AddonAPI, AddonDefinition, AddonVersion, EAddonFlags, ELogLevel, LPVOID,
+};
 use once_cell::sync::OnceCell;
 use std::{
     convert::Into,
@@ -10,7 +13,9 @@ use std::{
     sync::Arc,
     thread::{spawn, JoinHandle},
 };
+use std::ffi::CStr;
 use tokio;
+use tokio::runtime::Builder;
 use windows::{
     core::s,
     Win32::{
@@ -26,7 +31,7 @@ static mut HANDLE: Option<HMODULE> = None;
 static mut THREADS: OnceCell<Vec<JoinHandle<()>>> = OnceCell::new();
 static mut API: MaybeUninit<&'static AddonAPI> = MaybeUninit::uninit();
 static DISCORD_APP_ID_I64: i64 = 1180951923722039316;
-static mut AAA: OnceCell<Arc<NexusRichPresence>> = OnceCell::new();
+static mut AAA: OnceCell<NexusRichPresence> = OnceCell::new();
 
 #[no_mangle]
 unsafe extern "C" fn DllMain(
@@ -45,16 +50,22 @@ unsafe extern "C" fn DllMain(
 
 unsafe extern "C" fn load(a_api: *mut AddonAPI) {
     API.write(&*a_api);
-    let mumbledata = (API.assume_init().get_resource)(s!("DL_MUMBLE_LINK").0 as _);
-    if mumbledata.is_null() {
+    let mumble_data =
+        (API.assume_init().get_resource)(s!("DL_MUMBLE_LINK").0 as _) as *const CMumbleLinkData;
+    if mumble_data.is_null() {
         panic!("no mumble")
     } else {
+        let api = API.assume_init();
+        (api.log)(
+            ELogLevel::DEBUG,
+            (format!("{:?}\0", CStr::from_ptr(mumble_data as *const _).to_string_lossy()).to_string() + "\0").as_ptr() as _,
+        );
     }
 
     let file = File::create("debug_discord.log");
     let file = match file {
         Ok(file) => file,
-        Err(error) => panic!("Error"),
+        Err(_) => panic!("Error"),
     };
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
@@ -73,10 +84,23 @@ unsafe extern "C" fn load(a_api: *mut AddonAPI) {
 }
 
 unsafe extern "C" fn unload() {
-    // TODO: Figure out how to send the shutdown signal here
-    // Causes crashes when trying to unload due to forever waiting on the threads to join
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    let h = runtime.spawn(AAA.get_mut().unwrap().shutdown());
+    runtime.block_on(h).unwrap();
     for t in THREADS.take().unwrap() {
         let _ = t.join();
+    }
+    let q = AAA.take();
+    if q.is_none() {
+        let api = API.assume_init();
+        (api.log)(
+            ELogLevel::DEBUG,
+            ("Unable to obtain inner value".to_string() + "\0").as_ptr() as _,
+        );
     }
 }
 

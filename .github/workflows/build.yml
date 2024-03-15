@@ -41,7 +41,7 @@ jobs:
   release:
     name: Release Binaries
     runs-on: ubuntu-latest
-    needs: [build-lib]
+    needs: [ build-lib ]
     permissions:
       contents: write
 

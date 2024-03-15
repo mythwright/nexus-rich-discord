@@ -1,7 +1,6 @@
-use std::sync::{Arc};
 use std::time::Duration;
 use nexus_rs::raw_structs::ELogLevel;
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, mpsc};
 use tokio::sync::RwLock;
 use crate::API;
 
@@ -10,10 +9,11 @@ pub struct NexusRichPresence {
     pub discord: OnceCell<discord_sdk::Discord>,
     pub shutdown: RwLock<bool>,
     discord_id: i64,
+    shutdown_chan: (mpsc::Sender<bool>, mpsc::Receiver<bool>),
 }
 
 impl NexusRichPresence {
-    pub async unsafe fn start(self: &mut Arc<Self>) {
+    pub async unsafe fn start(&mut self) {
         self.log(ELogLevel::DEBUG, "Starting Discord...".to_string());
         self.start_discord().await;
         if !self.discord.initialized() {
@@ -21,15 +21,16 @@ impl NexusRichPresence {
         }
         self.log(ELogLevel::DEBUG, "Done Waiting for Discord...".to_string());
         loop {
-            {
-                let shut = self.shutdown.read().await;
-                if !*shut {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(10)) => {
                     self.log(ELogLevel::DEBUG, "Updating Discord...".to_string());
                     self.update_act("Sitting at Character Select".to_string(), "AFK".to_string()).await;
                 }
+                _ = self.shutdown_chan.1.recv() => {
+                    self.log(ELogLevel::DEBUG, "Shutting down....".to_string());
+                    return;
+                }
             }
-
-            tokio::time::sleep(Duration::from_secs(10)).await;
         }
     }
 
@@ -73,13 +74,11 @@ impl NexusRichPresence {
         }
     }
 
-    pub async fn unload(mut self) {
-        {
-            let mut shut = self.shutdown.write().await;
-            *shut = true;
-        }
+    pub async fn shutdown(&mut self) {
+        self.shutdown_chan.0.send(true).await.unwrap();
+    }
 
-
+    pub fn unload(&mut self) {
         let d = self.discord.take().unwrap();
         let _ = d.disconnect();
         self.log(ELogLevel::INFO, "Discord disconnected".to_string())
@@ -94,11 +93,12 @@ impl NexusRichPresence {
         }
     }
 
-    pub fn new(discord_app_id: i64) -> Arc<Self> {
-        Arc::new(Self {
+    pub fn new(discord_app_id: i64) -> Self {
+        Self {
             discord: OnceCell::new(),
             discord_id: discord_app_id,
             shutdown: Default::default(),
-        })
+            shutdown_chan: mpsc::channel(1),
+        }
     }
 }
