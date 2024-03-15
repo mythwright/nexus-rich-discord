@@ -1,9 +1,18 @@
+use std::ffi::c_void;
+use std::num::NonZeroU32;
 use std::time::Duration;
-use nexus_rs::raw_structs::ELogLevel;
-use tokio::sync::{OnceCell, mpsc};
-use tokio::sync::RwLock;
-use crate::API;
+use discord_sdk::activity::ActivityActionKind;
 
+use discord_sdk::overlay::InviteAction;
+use discord_sdk::registration::Application;
+use discord_sdk::Snowflake;
+use nexus_rs::raw_structs::ELogLevel;
+use tokio::sync::{mpsc, OnceCell};
+use tokio::sync::RwLock;
+use windows::core::s;
+
+use crate::API;
+use crate::mumble_data::Identity;
 
 pub struct NexusRichPresence {
     pub discord: OnceCell<discord_sdk::Discord>,
@@ -24,7 +33,7 @@ impl NexusRichPresence {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(10)) => {
                     self.log(ELogLevel::DEBUG, "Updating Discord...".to_string());
-                    self.update_act("Sitting at Character Select".to_string(), "AFK".to_string()).await;
+                    // self.update_act("Sitting at Character Select".to_string(), "AFK".to_string()).await;
                 }
                 _ = self.shutdown_chan.1.recv() => {
                     self.log(ELogLevel::DEBUG, "Shutting down....".to_string());
@@ -43,7 +52,7 @@ impl NexusRichPresence {
         self.log(ELogLevel::DEBUG, "Creating Discord SDK...".to_string());
         let disc = discord_sdk::Discord::new(
             discord_sdk::DiscordApp::PlainId(self.discord_id),
-            discord_sdk::Subscriptions::ACTIVITY,
+            discord_sdk::Subscriptions::ALL,
             Box::new(handler)).expect("unable to create discord client");
 
         self.log(ELogLevel::DEBUG, "Waiting for Discord handshake".to_string());
@@ -72,6 +81,11 @@ impl NexusRichPresence {
                 // self.log(ELogLevel::INFO, "Updated Activity".to_string())
             }
         }
+    }
+
+    pub async fn process_event(&self, identity: Identity) {
+        let name = String::from_utf8(Vec::from(identity.name));
+        self.update_act("Playing as character".to_string(), name.unwrap()).await;
     }
 
     pub async fn shutdown(&mut self) {

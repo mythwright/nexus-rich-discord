@@ -1,5 +1,7 @@
 use bitmask_enum::bitmask;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+use libc::wchar_t;
 
 #[bitmask(u32)]
 pub enum UiState {
@@ -12,7 +14,7 @@ pub enum UiState {
     IsInCombat = 1 << 6,
 }
 
-#[derive(Deserialize, Debug, Clone, Copy)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Identity {
     pub name: [u8; 20],
@@ -71,13 +73,14 @@ pub struct CMumbleLinkData {
     pub ui_version: u32,
     pub ui_tick: u32,
     pub avatar: Position,
-    pub name: [i32; 256],
+    pub name: [u16; 256],
     pub camera: Position,
-    pub identity: [u16; 256],
+    pub identity: [wchar_t; 256],
     pub context_len: u32,
     pub context: MumbleContext,
-    pub description: [i32; 2048],
+    pub description: [wchar_t; 2048],
 }
+
 
 impl Clone for CMumbleLinkData {
     fn clone(&self) -> Self {

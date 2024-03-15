@@ -1,4 +1,4 @@
-use crate::mumble_data::CMumbleLinkData;
+use crate::mumble_data::{CMumbleLinkData, Identity, MumbleContext, Position};
 use crate::rich_presence_core::NexusRichPresence;
 use nexus_rs::raw_structs::{
     AddonAPI, AddonDefinition, AddonVersion, EAddonFlags, ELogLevel, LPVOID,
@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
     thread::{spawn, JoinHandle},
 };
-use std::ffi::CStr;
+use std::ffi::{c_void, CStr};
 use tokio;
 use tokio::runtime::Builder;
 use windows::{
@@ -54,13 +54,8 @@ unsafe extern "C" fn load(a_api: *mut AddonAPI) {
         (API.assume_init().get_resource)(s!("DL_MUMBLE_LINK").0 as _) as *const CMumbleLinkData;
     if mumble_data.is_null() {
         panic!("no mumble")
-    } else {
-        let api = API.assume_init();
-        (api.log)(
-            ELogLevel::DEBUG,
-            (format!("{:?}\0", CStr::from_ptr(mumble_data as *const _).to_string_lossy()).to_string() + "\0").as_ptr() as _,
-        );
     }
+
 
     let file = File::create("debug_discord.log");
     let file = match file {
@@ -76,11 +71,34 @@ unsafe extern "C" fn load(a_api: *mut AddonAPI) {
     THREADS.set(Vec::new()).expect("TODO: panic message");
 
     THREADS.get_mut().unwrap().push(spawn(|| {
-        let n = NexusRichPresence::new(DISCORD_APP_ID_I64);
-        let _ = AAA.set(n);
+        let _ = AAA.set(NexusRichPresence::new(DISCORD_APP_ID_I64));
+        (API.assume_init().subscribe_event)(s!("EV_MUMBLE_IDENTITY_UPDATED").0 as _, event_process);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(AAA.get_mut().unwrap().start());
     }));
+}
+
+pub unsafe extern "C" fn event_process(event_args: *mut c_void) {
+    let e = event_args as *const Identity;
+    let ee = *e;
+
+    let api = API.assume_init();
+    (api.log)(
+        ELogLevel::DEBUG,
+        (format!("{:?}", ee).to_string() + "\0").as_ptr() as _,
+    );
+
+    if AAA.get().is_none() {
+        return;
+    }
+
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    runtime.block_on(runtime.spawn(AAA.get_mut().unwrap().process_event(ee))).unwrap();
 }
 
 unsafe extern "C" fn unload() {
@@ -103,6 +121,7 @@ unsafe extern "C" fn unload() {
         );
     }
 }
+
 
 #[no_mangle]
 pub extern "C" fn GetAddonDef() -> *mut AddonDefinition {
